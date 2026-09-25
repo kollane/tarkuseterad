@@ -1,6 +1,6 @@
 # Tiimipõhine SSH hüppemasin (jump server)
 
-Pöördumine IT-osakonnale. Praegu käib meie tiimi töö serveritega peamiselt nii, et kõigepealt logitakse RDP-ga Windowsi terminaliserverisse ja sealt edasi PuTTY-ga serveritesse. **Soovime sellest vaheastmest loobuda.** Selle asemel tahame tiimile eraldi SSH hüppemasinat (jump server), mille kaudu saab tiimi serveritesse ühenduda otse oma tööjaamast.
+Pöördumine IT-osakonnale. Praegu käib meie tiimi töö serveritega peamiselt nii, et kõigepealt logitakse RDP-ga Windowsi terminaliserverisse ja sealt edasi PuTTY-ga serveritesse. **Soovime sellest vaheastmest loobuda.** Selle asemel tahame tiimile eraldi SSH hüppemasinat (jump server), mille kaudu saab tiimi serveritesse ühenduda otse oma tööjaamast. Enamik tiimi liikmeid kasutab Linuxi tööjaama, kus SSH klient on juba olemas.
 
 Allpool on kirjas praegune olukord, selle probleemid, mida soovime ja miks. Dokumendi teises pooles on tehniline lahendusettepanek, millest saab lähtuda.
 
@@ -24,6 +24,7 @@ Allpool on kirjas praegune olukord, selle probleemid, mida soovime ja miks. Doku
 
 - Meil on **üks tiim**, kus on mitu inimest.
 - Tiim haldab **kümneid Linuxi servereid**.
+- Enamik tiimi liikmeid kasutab **Linuxi tööjaama**, mõnel on Windows.
 - Enamik tööd tehakse praegu **RDP kaudu Windowsi terminaliserveris, kust edasi PuTTY-ga** serveritesse.
 
 ### Kuidas see praegu käib
@@ -31,8 +32,8 @@ Allpool on kirjas praegune olukord, selle probleemid, mida soovime ja miks. Doku
 **Peamine viis: RDP ja PuTTY**
 
 ```
-   tiimiliikme tööjaam
-      │  RDP
+   tiimiliikme tööjaam (enamasti Linux)
+      │  RDP (nt Remmina, xfreerdp)
       ▼
    Windowsi terminaliserver     ← graafiline seanss, PuTTY, võtmed/paroolid
       │  PuTTY (SSH)
@@ -66,33 +67,34 @@ Mõlemal juhul peab iga inimese avalik võti olema failis `authorized_keys` kõi
 
 **RDP ja terminaliserveri vaheaste (peamine probleem):**
 
-1. **Töö on aeglane ja ebamugav.** Iga toiming käib läbi kaugtöölaua: klaviatuuri viivitus, lõikelaua ja kodeeringu probleemid, akende haldus kahes kohas.
-2. **Tavalised tööriistad ei tööta otse.** `scp`/`rsync`, `git`, Ansible, VS Code Remote-SSH, skriptid ja automaatika eeldavad SSH ühendust otse tööjaamast. Praegu tuleb failid ja käsud tõsta läbi terminaliserveri.
-3. **Terminaliserver on suur turvarisk.** Seal on korraga mitme inimese seansid ja tõenäoliselt ka SSH võtmed või salvestatud PuTTY seansid. Kui masin kompromiteeritakse, saab ründaja ligipääsu kõigile, kes seda kasutavad. Windowsi mälust saab kasutajate andmeid kätte (nt `mimikatz`, Pageant'i mälu).
-4. **Privaatvõti ei ole kasutaja kontrolli all.** Kui võti asub jagatud serveris, ei ole see enam isiklik.
-5. **Veel üks süsteem, mida hallata ja litsentseerida.** Windows Serveri uuendused, RDS litsentsid (CAL), PuTTY versioonid, kasutajaprofiilid.
-6. **Veel üks rikkekoht.** Kui terminaliserver on maas, ei saa keegi serveritega töötada.
+1. **Tarbetu ring Windowsi kaudu.** Linuxi tööjaamast minnakse RDP-ga Windowsi masinasse, et sealt PuTTY-ga jälle Linuxi serverisse SSH teha. Samas on SSH klient Linuxi tööjaamas juba olemas.
+2. **Töö on aeglane ja ebamugav.** Iga toiming käib läbi kaugtöölaua: klaviatuuri viivitus, lõikelaua ja kodeeringu probleemid, akende haldus kahes kohas.
+3. **Tavalised tööriistad ei tööta otse.** `scp`/`rsync`, `git`, Ansible, VS Code Remote-SSH, skriptid ja automaatika eeldavad SSH ühendust otse tööjaamast. Praegu tuleb failid ja käsud tõsta läbi terminaliserveri.
+4. **Terminaliserver on suur turvarisk.** Seal on korraga mitme inimese seansid ja tõenäoliselt ka SSH võtmed või salvestatud PuTTY seansid. Kui masin kompromiteeritakse, saab ründaja ligipääsu kõigile, kes seda kasutavad. Windowsi mälust saab kasutajate andmeid kätte (nt `mimikatz`, Pageant'i mälu).
+5. **Privaatvõti ei ole kasutaja kontrolli all.** Kui võti asub jagatud serveris, ei ole see enam isiklik.
+6. **Veel üks süsteem, mida hallata ja litsentseerida.** Windows Serveri uuendused, RDS litsentsid (CAL), PuTTY versioonid, kasutajaprofiilid.
+7. **Veel üks rikkekoht.** Kui terminaliserver on maas, ei saa keegi serveritega töötada.
 
 **Ligipääsude haldus ja piiramine:**
 
-7. **Ligipääsu haldamine on käsitsi ja paljudes kohtades.** Uue inimese lisamisel tuleb tema võti panna kümnetesse `authorized_keys` failidesse. Inimese lahkumisel tuleb see kõigist uuesti eemaldada. Tavaliselt jääb mõni vahele, ja see vana võti jääbki kehtima.
-8. **Puudub ülevaade, kellel kuhu ligipääs on.** Selle teadasaamiseks tuleb käia läbi kõik serverid.
-9. **Võtmed ei aegu.** Kord lisatud võti kehtib igavesti, kui keegi seda ise ei eemalda.
-10. **Ligipääs ei ole piiratud tiimi serveritega.** Hüppemasinad ei ole tiimipõhised. Seega sõltub ainult serverite endi seadistusest, kuhu nende kaudu pääseb.
-11. **Sisselogimisi on raske auditeerida.** Logid on laiali kõigis masinates. Jagatud kasutajakonto (`kasutaja`) või terminaliserveri kaudu tulles ei ole logist kohe näha, kes tegelikult sisse logis.
-12. **Kaks hüpet lisavad keerukust.** Kui `jumpserver1` ja `jumpserver2` ei asu erinevates võrgutsoonides, ei lisa teine hüpe turvalisust, küll aga haldustööd ja ühe rikkekoha juurde.
-13. **Serverite seadistus erineb.** Osal serveritest on vana OpenSSH, mis ei toeta kaasaegset krüptot. Klienti tuleb hoiatuste vaigistamiseks eraldi seadistada (`WarnWeakCrypto no-pq-kex`, vt [märkust](#märkus-warnweakcrypto)).
+8. **Ligipääsu haldamine on käsitsi ja paljudes kohtades.** Uue inimese lisamisel tuleb tema võti panna kümnetesse `authorized_keys` failidesse. Inimese lahkumisel tuleb see kõigist uuesti eemaldada. Tavaliselt jääb mõni vahele, ja see vana võti jääbki kehtima.
+9. **Puudub ülevaade, kellel kuhu ligipääs on.** Selle teadasaamiseks tuleb käia läbi kõik serverid.
+10. **Võtmed ei aegu.** Kord lisatud võti kehtib igavesti, kui keegi seda ise ei eemalda.
+11. **Ligipääs ei ole piiratud tiimi serveritega.** Hüppemasinad ei ole tiimipõhised. Seega sõltub ainult serverite endi seadistusest, kuhu nende kaudu pääseb.
+12. **Sisselogimisi on raske auditeerida.** Logid on laiali kõigis masinates. Jagatud kasutajakonto (`kasutaja`) või terminaliserveri kaudu tulles ei ole logist kohe näha, kes tegelikult sisse logis.
+13. **Kaks hüpet lisavad keerukust.** Kui `jumpserver1` ja `jumpserver2` ei asu erinevates võrgutsoonides, ei lisa teine hüpe turvalisust, küll aga haldustööd ja ühe rikkekoha juurde.
+14. **Serverite seadistus erineb.** Osal serveritest on vana OpenSSH, mis ei toeta kaasaegset krüptot. Klienti tuleb hoiatuste vaigistamiseks eraldi seadistada (`WarnWeakCrypto no-pq-kex`, vt [märkust](#märkus-warnweakcrypto)).
 
 ### Mida soovime
 
 1. **Loobuda RDP ja terminaliserveri vaheastmest** SSH töö jaoks.
 2. **Tiimipõhist hüppemasinat:** üks `jumpserver`, mis on mõeldud ainult meie tiimile ja mille kaudu pääseb ainult meie tiimi serveritele.
-3. **SSH ühendust otse oma tööjaamast.** Windowsis on OpenSSH klient sisse ehitatud, samuti on olemas Windows Terminal. Sobivad ka PuTTY, WinSCP ja VS Code, kõik oskavad hüppemasinat kasutada.
+3. **SSH ühendust otse oma tööjaamast.** Linuxi tööjaamas on OpenSSH klient juba olemas ja `ProxyJump` töötab ilma lisatarkvarata. Samuti töötavad `scp`, `rsync`, `git`, Ansible ja VS Code Remote-SSH. Windowsi kasutajatel on OpenSSH klient sisse ehitatud, sobivad ka PuTTY ja WinSCP.
 
 ```
  tiimiliikme tööjaam ──► jumpserver (ainult edastab) ──► tiimi serverid
    isiklik võti                                        (SSH ainult jumpserverist)
-   (Windows Terminal / OpenSSH, PuTTY, VS Code)
+   (Linux: OpenSSH; Windows: OpenSSH, PuTTY)
 ```
 
 ### Mida see lahendab
@@ -114,7 +116,8 @@ Mõlemal juhul peab iga inimese avalik võti olema failis `authorized_keys` kõi
 ### Ootused lahendusele
 
 - [ ] Tiimi liikmed saavad tiimi serveritesse SSH-ga otse oma tööjaamast, ilma RDP-ta.
-- [ ] Töötab Windowsi sisseehitatud OpenSSH kliendiga (Windows Terminal) ja PuTTY-ga. Soovitavalt töötavad ka WinSCP ja VS Code Remote-SSH.
+- [ ] Töötab Linuxi tööjaama tavalise OpenSSH kliendiga (`ssh`, `scp`, `rsync`, Ansible, VS Code Remote-SSH).
+- [ ] Töötab ka Windowsi tööjaamast: sisseehitatud OpenSSH klient ja PuTTY/WinSCP.
 - [ ] Tiimil on üks oma hüppemasin (`jumpserver`), mis ainult edastab ühendusi, ilma shellita.
 - [ ] Tööjaamade võrgust on lubatud ühendus `jumpserver`-i porti 22 (vajadusel ainult VPN-i kaudu).
 - [ ] `jumpserver` saab ühenduda ainult tiimi serverite võrku (väljuv tulemüür).
@@ -137,7 +140,7 @@ Mõlemal juhul peab iga inimese avalik võti olema failis `authorized_keys` kõi
 ### Küsimused IT-osakonnale
 
 1. Kas tööjaamadest on võimalik lubada SSH ühendus (port 22) hüppemasinasse? Kas see peab käima VPN-i kaudu?
-2. Kas tööjaamad on hallatud (nt Intune) ja kas neil on lubatud Windowsi OpenSSH klient ja `ssh-agent` teenus?
+2. Kas tööjaamadele on seatud piiranguid, mis takistavad SSH kasutamist (nt Windowsi tööjaamades OpenSSH klient ja `ssh-agent` teenus)?
 3. Kas terminaliserverit kasutatakse ka millekski muuks peale SSH? Kas seda saab tiimi jaoks pärast üleminekut sulgeda?
 4. Kas tiimi serverid on eraldi võrgus (VLAN või alamvõrk), või tuleb see teha?
 5. Miks on praegu kaks hüpet? Kas `jumpserver1` ja `jumpserver2` asuvad erinevates võrgutsoonides?
@@ -145,7 +148,7 @@ Mõlemal juhul peab iga inimese avalik võti olema failis `authorized_keys` kõi
 7. Kas serverite seadistamiseks kasutatakse juba Ansible'it või mõnda muud tööriista?
 8. Kas eelistate ise ehitatud lahendust (OpenSSH + CA) või valmis platvormi (Teleport, Tailscale SSH, HashiCorp Boundary)?
 
-Tehniline lahendusettepanek on allpool. Meie olukorda (üks tiim, kümned serverid, mitu inimest) sobib [2. etapp](#2-etapp-kümneid-servereid-mitu-inimest). [1. etapi](#1-etapp-vähe-servereid-üks-tiim) saab teha esimese sammuna ja see on 2. etapi aluseks. Windowsi tööjaama seadistus on kirjas punktis [1.5](#15-windowsi-tööjaam).
+Tehniline lahendusettepanek on allpool. Meie olukorda (üks tiim, kümned serverid, mitu inimest) sobib [2. etapp](#2-etapp-kümneid-servereid-mitu-inimest). [1. etapi](#1-etapp-vähe-servereid-üks-tiim) saab teha esimese sammuna ja see on 2. etapi aluseks. Linuxi tööjaama seadistus on kirjas punktis [1.4](#14-kliendi-config-linuxi-tööjaam) ja Windowsi oma punktis [1.5](#15-windowsi-tööjaam).
 
 ---
 
@@ -302,7 +305,11 @@ ip saddr 10.10.0.5 tcp dport 22 accept
 tcp dport 22 drop
 ```
 
-### 1.4 Kliendi config (sama fail kõigil tiimiliikmetel)
+### 1.4 Kliendi config (Linuxi tööjaam)
+
+Enamik tiimi liikmeid kasutab Linuxi tööjaama. OpenSSH klient on seal juba olemas ja lisatarkvara pole vaja. Sama config-fail sobib kõigile tiimiliikmetele.
+
+Võti tehakse oma tööjaamas, parooliga (vt [1.1](#11-igal-inimesel-on-oma-võti)). Tavaliselt hoiab töölaua keskkond (GNOME Keyring, KDE Wallet) võtit mälus. Kui mitte, kasuta `ssh-add ~/.ssh/voti`.
 
 `~/.ssh/config`:
 
@@ -320,7 +327,15 @@ Host *.sise
     IdentitiesOnly yes
 ```
 
-Kasutamine: `ssh server1.sise` või `ssh server2.sise`
+Kasutamine:
+
+```bash
+ssh server1.sise
+scp fail.txt server1.sise:/tmp/
+rsync -av kaust/ server2.sise:/srv/kaust/
+```
+
+Sama config-faili kaudu töötavad ka Ansible ja VS Code Remote-SSH, lisaseadistust pole vaja.
 
 Hostivõtmed kogu üks kord kokku ja jaga tiimile ühise failina, siis ei pea keegi esimesel ühendusel pimesi „yes“ vastama:
 
@@ -340,7 +355,7 @@ Host *
 
 ### 1.5 Windowsi tööjaam
 
-RDP ja terminaliserverit pole vaja. Kõik allolev toimub tiimiliikme enda tööjaamas.
+See on neile tiimiliikmetele, kes kasutavad Windowsi. Ka nemad ei vaja RDP-d ega terminaliserverit, kõik allolev toimub nende enda tööjaamas.
 
 **Windowsi sisseehitatud OpenSSH (Windows Terminal / PowerShell)**
 
@@ -364,7 +379,7 @@ Start-Service ssh-agent
 ssh-add $env:USERPROFILE\.ssh\voti
 ```
 
-Config-fail on `%USERPROFILE%\.ssh\config`, sama sisuga nagu [punktis 1.4](#14-kliendi-config-sama-fail-kõigil-tiimiliikmetel). Windowsi OpenSSH ei toeta `ControlMaster` valikut, seega jäta see plokk Windowsis välja.
+Config-fail on `%USERPROFILE%\.ssh\config`, sama sisuga nagu [punktis 1.4](#14-kliendi-config-linuxi-tööjaam). Windowsi OpenSSH ei toeta `ControlMaster` valikut, seega jäta see plokk Windowsis välja.
 
 Kasutamine Windows Terminalis või PowerShellis:
 ```powershell
