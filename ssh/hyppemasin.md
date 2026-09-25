@@ -1,23 +1,30 @@
-# SSH hüppemasin (jump host)
+# Tiimipõhine SSH hüppemasin (jump server)
 
-Siin on praeguse SSH-ligipääsu hinnang ja etapiviisiline lahendus ühele tiimile.
-
-Näidetes on hüppemasin `jumpserver` (`jumpserver.firma.ee`, sisevõrgu IP `10.10.0.5`) ja serverid `server1`, `server2` jne asuvad võrgus `10.10.0.0/24`, nimedega kujul `*.sise` (nt `server1.sise`).
+Pöördumine IT-osakonnale: soovime oma tiimile eraldi hüppemasinat (jump server), mille kaudu tiimi liikmed pääsevad ligi tiimi serveritele. Allpool on kirjas praegune olukord, selle probleemid, mida soovime ja miks. Dokumendi teises pooles on tehniline lahendusettepanek, millest saab lähtuda.
 
 ## Sisukord
 
-1. [Praegune olukord](#praegune-olukord)
-2. [Hinnang](#hinnang)
-3. [Milline lahendus millal](#milline-lahendus-millal)
-4. [1. etapp: vähe servereid, üks tiim](#1-etapp-vähe-servereid-üks-tiim)
-5. [2. etapp: kümneid servereid, mitu inimest](#2-etapp-kümneid-servereid-mitu-inimest)
-6. [Olemasolevate võtmete kasutamine](#olemasolevate-võtmete-kasutamine)
-7. [Suurem mastaap: sadu servereid, mitu tiimi](#suurem-mastaap-sadu-servereid-mitu-tiimi)
-8. [Märkus: WarnWeakCrypto](#märkus-warnweakcrypto)
+1. [Probleemipüstitus](#probleemipüstitus)
+2. [Praegune olukord tehniliselt](#praegune-olukord-tehniliselt)
+3. [Hinnang](#hinnang)
+4. [Milline lahendus millal](#milline-lahendus-millal)
+5. [1. etapp: vähe servereid, üks tiim](#1-etapp-vähe-servereid-üks-tiim)
+6. [2. etapp: kümneid servereid, mitu inimest](#2-etapp-kümneid-servereid-mitu-inimest)
+7. [Olemasolevate võtmete kasutamine](#olemasolevate-võtmete-kasutamine)
+8. [Suurem mastaap: sadu servereid, mitu tiimi](#suurem-mastaap-sadu-servereid-mitu-tiimi)
+9. [Märkus: WarnWeakCrypto](#märkus-warnweakcrypto)
 
 ---
 
-## Praegune olukord
+## Probleemipüstitus
+
+### Taust
+
+- Meil on **üks tiim**, kus on mitu inimest.
+- Tiim haldab **kümneid servereid**.
+- Tiimi liikmed logivad serveritesse sisse SSH abil, läbi kahe hüppemasina.
+
+### Kuidas see praegu käib
 
 ```
    sinu HP (kasutaja@hp)
@@ -36,6 +43,80 @@ Näidetes on hüppemasin `jumpserver` (`jumpserver.firma.ee`, sisevõrgu IP `10.
       ▼
     shell server1 peal
 ```
+
+Iga inimese avalik võti peab olema kirjas kõigis masinates, kuhu ta ligi pääseb (`jumpserver1`, `jumpserver2` ja iga server), failis `authorized_keys`.
+
+Ühendamise tehnika (`ssh -J` / `ProxyJump`) on õige: ühendus on otsast lõpuni krüpteeritud ja privaatvõti ei lahku kasutaja arvutist. Probleem on ligipääsude **halduses** ja **piiramises**.
+
+### Probleemid
+
+1. **Ligipääsu haldamine on käsitsi ja paljudes kohtades.** Uue inimese lisamisel tuleb tema võti panna kümnetesse `authorized_keys` failidesse. Inimese lahkumisel tuleb see kõigist uuesti eemaldada. Tavaliselt jääb mõni vahele, ja see vana võti jääbki kehtima.
+2. **Puudub ülevaade, kellel kuhu ligipääs on.** Selle teadasaamiseks tuleb käia läbi kõik serverid.
+3. **Võtmed ei aegu.** Kord lisatud võti kehtib igavesti, kui keegi seda ise ei eemalda.
+4. **Ligipääs ei ole piiratud tiimi serveritega.** Hüppemasinad ei ole tiimipõhised. Seega sõltub ainult serverite endi seadistusest, kuhu nende kaudu pääseb.
+5. **Hüppemasinates on ilmselt shell.** Hüppemasin on kõige väärtuslikum sihtmärk, sest sealt pääseb edasi kõikjale. Seal ei peaks olema võimalik midagi muud teha kui ühendust edasi suunata.
+6. **Sisselogimisi on raske auditeerida.** Logid on laiali kõigis masinates. Jagatud kasutajakonto (`kasutaja`) korral ei ole logist kohe näha, kes tegelikult sisse logis.
+7. **Kaks hüpet lisavad keerukust.** Kui `jumpserver1` ja `jumpserver2` ei asu erinevates võrgutsoonides, ei lisa teine hüpe turvalisust, küll aga haldustööd ja ühe rikkekoha juurde.
+8. **Serverite seadistus erineb.** Osal serveritest on vana OpenSSH, mis ei toeta kaasaegset krüptot. Klienti tuleb hoiatuste vaigistamiseks eraldi seadistada (`WarnWeakCrypto no-pq-kex`, vt [märkust](#märkus-warnweakcrypto)).
+
+### Mida soovime
+
+**Tiimipõhist hüppemasinat**: üks `jumpserver`, mis on mõeldud ainult meie tiimile ja mille kaudu pääseb ainult meie tiimi serveritele.
+
+```
+ tiimiliikme HP ──► jumpserver (ainult edastab) ──► tiimi serverid
+                                                   (SSH ainult jumpserverist)
+```
+
+### Mida see lahendab
+
+| Probleem praegu | Lahendus tiimipõhise hüppemasinaga |
+|---|---|
+| Võtmed on kümnetes `authorized_keys` failides | SSH sertifikaadid: serverites on üks CA võti ja ligipääs antakse ühes kohas |
+| Lahkunud töötaja võti jääb kehtima | Sertifikaat aegub ise, vajadusel saab selle tsentraalselt tühistada |
+| Pole ülevaadet, kellel kuhu ligipääs on | Ligipääs on kirjas sertifikaadis (principal/roll) ja väljastatud sertifikaatide nimekirjas |
+| Ligipääs ei ole tiimiga piiratud | `jumpserver` pääseb tulemüüri järgi ainult tiimi võrku ja serverid võtavad SSH ühendusi vastu ainult `jumpserver`-ist |
+| Hüppemasinas on shell | `jumpserver` ainult edastab ühendusi: `ForceCommand nologin`, TTY-d pole |
+| Logist ei näe, kes sisse logis | Sertifikaadis on inimese nimi ja see jõuab iga serveri logisse. Logid saadetakse keskselt kogumiseks |
+| Kaks hüpet | Üks hüpe, välja arvatud juhul, kui võrgutsoonid seda tegelikult nõuavad |
+| Serverite seadistus erineb | Kõik seadistused tehakse ühest Ansible rollist, nii on OpenSSH versioon ja `sshd_config` kõikjal ühesugused |
+
+### Ootused lahendusele
+
+- [ ] Tiimil on üks oma hüppemasin (`jumpserver`), mis ainult edastab ühendusi, ilma shellita.
+- [ ] `jumpserver` saab ühenduda ainult tiimi serverite võrku (väljuv tulemüür).
+- [ ] Tiimi serverid lubavad SSH ühendusi ainult `jumpserver`-ist (sisenev tulemüür).
+- [ ] Sisselogimine käib isikliku võtmega, paroolid on keelatud. Jagatud võtmeid ei kasutata.
+- [ ] Ligipääs antakse SSH sertifikaatidega, millel on piiratud kehtivus. Inimese lisamiseks ega eemaldamiseks ei pea serverites midagi muutma.
+- [ ] Logist on näha, kes (inimese nimi) millal kuhu sisse logis, ja logid on koondatud ühte kohta.
+- [ ] Hostivõtmed on kontrollitavad (hostisertifikaadid või tiimile jagatud `known_hosts` fail).
+- [ ] Seadistus on koodina (Ansible vms): uue serveri saab sama seadistusega üles panna ja `jumpserver`-i saab rikke korral kiiresti uuesti ehitada.
+- [ ] Hädaolukorraks on olemas konsooliligipääs serveritele, kui `jumpserver` on maas.
+
+### Mida tiim omalt poolt annab
+
+- tiimi serverite nimekirja (nimed ja IP-d);
+- tiimi liikmete nimekirja ja nende avalikud võtmed (olemasolevaid võtmeid saab sertifikaatide jaoks edasi kasutada, vt [olemasolevate võtmete kasutamine](#olemasolevate-võtmete-kasutamine));
+- vajadusel rollid, kui kõik ei pea pääsema kõigile serveritele (nt `web`, `db`);
+- testimise üleminekul, kus vana ja uus lahendus töötavad paralleelselt.
+
+### Küsimused IT-osakonnale
+
+1. Kas tiimi serverid on eraldi võrgus (VLAN või alamvõrk), või tuleb see teha?
+2. Miks on praegu kaks hüpet? Kas `jumpserver1` ja `jumpserver2` asuvad erinevates võrgutsoonides?
+3. Kas ettevõttes on juba olemas SSH CA või SSO (nt Entra ID, Keycloak), millega sertifikaatide väljastamise saaks siduda?
+4. Kas serverite seadistamiseks kasutatakse juba Ansible'it või mõnda muud tööriista?
+5. Kas eelistate ise ehitatud lahendust (OpenSSH + CA) või valmis platvormi (Teleport, Tailscale SSH, HashiCorp Boundary)?
+
+Tehniline lahendusettepanek on allpool. Meie olukorda (üks tiim, kümned serverid, mitu inimest) sobib [2. etapp](#2-etapp-kümneid-servereid-mitu-inimest). [1. etapi](#1-etapp-vähe-servereid-üks-tiim) saab teha esimese sammuna ja see on 2. etapi aluseks.
+
+---
+
+## Praegune olukord tehniliselt
+
+Näidetes on hüppemasin `jumpserver` (`jumpserver.firma.ee`, sisevõrgu IP `10.10.0.5`) ja serverid `server1`, `server2` jne asuvad võrgus `10.10.0.0/24`, nimedega kujul `*.sise` (nt `server1.sise`).
+
+Praegune ahel on joonisel [probleemipüstituses](#kuidas-see-praegu-käib).
 
 Käsk `ssh -J jumpserver1,jumpserver2 server1` töötab nii:
 

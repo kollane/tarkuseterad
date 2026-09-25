@@ -4,4 +4,4 @@ Märkmed, juhendid ja lahendused.
 
 ## Sisukord
 
-- [SSH hüppemasin (jump host)](ssh/hyppemasin.md): praeguse lahenduse hinnang ning etapiviisiline lahendus ühele tiimile (vähe servereid → kümned serverid ja mitu inimest)
+- [Tiimipõhine SSH hüppemasin](ssh/hyppemasin.md): pöördumine IT-osakonnale (probleemipüstitus, soov ja ootused) koos tehnilise lahendusettepanekuga
