@@ -2,7 +2,7 @@
 
 Siin on praeguse SSH-ligipääsu hinnang ja etapiviisiline lahendus ühele tiimile.
 
-Näidetes on hüppemasin `kask` (`kask.firma.ee`, sisevõrgu IP `10.10.0.5`) ja serverid asuvad võrgus `10.10.0.0/24`, nimedega kujul `*.sise`.
+Näidetes on hüppemasin `jumpserver` (`jumpserver.firma.ee`, sisevõrgu IP `10.10.0.5`) ja serverid `server1`, `server2` jne asuvad võrgus `10.10.0.0/24`, nimedega kujul `*.sise` (nt `server1.sise`).
 
 ## Sisukord
 
@@ -21,49 +21,49 @@ Näidetes on hüppemasin `kask` (`kask.firma.ee`, sisevõrgu IP `10.10.0.5`) ja 
 
 ```
    sinu HP (kasutaja@hp)
-      │  ssh -J kask,sammal kivi
+      │  ssh -J jumpserver1,jumpserver2 server1
       │  võti: ~/.ssh/voti
       ▼
-   [1] kask            ← esimene hüpe (config: ProxyJump puudub)
-      │  (sinu võti → kasutaja@kask)
+   [1] jumpserver1     ← esimene hüpe (config: ProxyJump puudub)
+      │  (sinu võti → kasutaja@jumpserver1)
       ▼
-   [2] sammal          ← teine hüpe
-      │  (jälle sinu võti → kasutaja@sammal)
+   [2] jumpserver2     ← teine hüpe
+      │  (jälle sinu võti → kasutaja@jumpserver2)
       ▼
-   [3] kivi:22
-      │  SSH protokoll ja sisselogimine: ikka sinu HP ↔ kivi
+   [3] server1:22
+      │  SSH protokoll ja sisselogimine: ikka sinu HP ↔ server1
       │  autentimine: sinu -i ~/.ssh/voti
       ▼
-    shell kivi peal
+    shell server1 peal
 ```
 
-Käsk `ssh -J kask,sammal kivi` töötab nii:
+Käsk `ssh -J jumpserver1,jumpserver2 server1` töötab nii:
 
-- Kõik kolm SSH-seanssi (HP↔kask, HP↔sammal, HP↔kivi) algavad **sinu HP-st**. Hüppemasinad ainult edastavad TCP-ühendust (`direct-tcpip`, sama mis `ssh -W`).
-- Privaatvõti ei lahku kunagi HP-lt. Kask ja sammal ei näe kivi seansi sisu, sest see on HP ja kivi vahel otsast lõpuni krüpteeritud.
+- Kõik kolm SSH-seanssi (HP↔jumpserver1, HP↔jumpserver2, HP↔server1) algavad **sinu HP-st**. Hüppemasinad ainult edastavad TCP-ühendust (`direct-tcpip`, sama mis `ssh -W`).
+- Privaatvõti ei lahku kunagi HP-lt. `jumpserver1` ja `jumpserver2` ei näe `server1` seansi sisu, sest see on HP ja server1 vahel otsast lõpuni krüpteeritud.
 
 Sama ahel `~/.ssh/config` failis:
 
 ```sshconfig
-Host kask
-    HostName kask.firma.ee
+Host jumpserver1
+    HostName jumpserver1.firma.ee
     User kasutaja
     IdentityFile ~/.ssh/voti
     IdentitiesOnly yes
 
-Host sammal
-    HostName sammal.firma.ee
+Host jumpserver2
+    HostName jumpserver2.firma.ee
     User kasutaja
     IdentityFile ~/.ssh/voti
     IdentitiesOnly yes
-    ProxyJump kask
+    ProxyJump jumpserver1
 
-Host kivi
-    HostName kivi.sise
+Host server1
+    HostName server1.sise
     User kasutaja
     IdentityFile ~/.ssh/voti
     IdentitiesOnly yes
-    ProxyJump sammal
+    ProxyJump jumpserver2
     WarnWeakCrypto no-pq-kex
 ```
 
@@ -91,7 +91,7 @@ Host kivi
 
 ### Kas on vaja kahte hüpet?
 
-Kase ja sammala ahel on mõistlik ainult siis, kui need asuvad **erinevates võrgutsoonides**, näiteks kask on DMZ-s ja sammal sisevõrgu servas ning kasest otse kivini ei pääse. Kui mõlemad on sisuliselt samas tsoonis, lisab teine hüpe haldustööd ja viivitust, aga turvalisust mitte. Siis piisaks ühest.
+Kahe hüppemasina ahel (`jumpserver1` → `jumpserver2`) on mõistlik ainult siis, kui need asuvad **erinevates võrgutsoonides**, näiteks jumpserver1 on DMZ-s ja jumpserver2 sisevõrgu servas ning jumpserver1-st otse server1-ni ei pääse. Kui mõlemad on sisuliselt samas tsoonis, lisab teine hüpe haldustööd ja viivitust, aga turvalisust mitte. Siis piisaks ühest.
 
 ---
 
@@ -110,7 +110,7 @@ Kase ja sammala ahel on mõistlik ainult siis, kui need asuvad **erinevates võr
 ## 1. etapp: vähe servereid, üks tiim
 
 ```
- tiimiliikme HP ──► kask (ainult edastab) ──► serverid (SSH ainult kasest)
+ tiimiliikme HP ──► jumpserver (ainult edastab) ──► serverid (SSH ainult jumpserverist)
    isiklik võti      kasutaja "jump"            kasutaja "admin"
 ```
 
@@ -122,7 +122,7 @@ ssh-keygen -t ed25519 -f ~/.ssh/voti -C "mari.maasikas"
 
 Võti peab olema parooliga ja iga inimene kasutab ainult oma võtit. Jagatud võtmeid ei tohi olla. Kommentaar (`-C`) on inimese nimi, siis on `authorized_keys` failist kohe näha, kellele võti kuulub.
 
-### 1.2 Hüppemasin `kask`
+### 1.2 Hüppemasin `jumpserver`
 
 `/etc/ssh/sshd_config`:
 
@@ -149,10 +149,10 @@ restrict,port-forwarding ssh-ed25519 AAAA... mari.maasikas
 restrict,port-forwarding ssh-ed25519 AAAA... jaan.tamm
 ```
 
-Tulemüür lubab kasest väljuvat SSH liiklust ainult serverite võrku. `PermitOpen` ei tunne alamvõrke (CIDR), seetõttu tuleb see piirang teha tulemüüris:
+Tulemüür lubab jumpserverist väljuvat SSH liiklust ainult serverite võrku. `PermitOpen` ei tunne alamvõrke (CIDR), seetõttu tuleb see piirang teha tulemüüris:
 
 ```
-# /etc/nftables.conf (kask) – output chain
+# /etc/nftables.conf (jumpserver) – output chain
 ct state established,related accept
 ip daddr 10.10.0.0/24 tcp dport 22 accept
 udp dport 53 accept              # DNS
@@ -160,7 +160,7 @@ udp dport 123 accept             # NTP
 drop
 ```
 
-Lisaks lülita sisse automaatsed turvauuendused (`unattended-upgrades` või `dnf-automatic`). Muud tarkvara kasele ei paigaldata.
+Lisaks lülita sisse automaatsed turvauuendused (`unattended-upgrades` või `dnf-automatic`). Muud tarkvara jumpserverisse ei paigaldata.
 
 ### 1.3 Serverid
 
@@ -176,7 +176,7 @@ AllowUsers admin
 
 Faili `/home/admin/.ssh/authorized_keys` pannakse samad tiimi võtmed (ilma `restrict` eesliiteta). Kasutaja `admin` saab vajadusel `sudo` õiguse.
 
-Tulemüür lubab SSH ühendusi **ainult kasest**. See on kõige tähtsam reegel, sest muidu saab hüppemasinast lihtsalt mööda minna:
+Tulemüür lubab SSH ühendusi **ainult jumpserverist**. See on kõige tähtsam reegel, sest muidu saab hüppemasinast lihtsalt mööda minna:
 
 ```
 # input chain
@@ -189,25 +189,25 @@ tcp dport 22 drop
 `~/.ssh/config`:
 
 ```sshconfig
-Host kask
-    HostName kask.firma.ee
+Host jumpserver
+    HostName jumpserver.firma.ee
     User jump
     IdentityFile ~/.ssh/voti
     IdentitiesOnly yes
 
 Host *.sise
     User admin
-    ProxyJump kask
+    ProxyJump jumpserver
     IdentityFile ~/.ssh/voti
     IdentitiesOnly yes
 ```
 
-Kasutamine: `ssh kivi.sise`
+Kasutamine: `ssh server1.sise` või `ssh server2.sise`
 
 Hostivõtmed kogu üks kord kokku ja jaga tiimile ühise failina, siis ei pea keegi esimesel ühendusel pimesi „yes“ vastama:
 
 ```bash
-ssh-keyscan kask.firma.ee > known_hosts.tiim
+ssh-keyscan jumpserver.firma.ee > known_hosts.tiim
 # serverite võtmed korja serverite endi pealt: /etc/ssh/ssh_host_ed25519_key.pub
 ```
 
@@ -220,22 +220,22 @@ Host *
     ControlPersist 10m
 ```
 
-### 1.5 Kui kask on maas
+### 1.5 Kui jumpserver on maas
 
 - Hädaolukorra jaoks on olemas **konsooliligipääs** serveritele (hüperviisor või IPMI). Selle paroolid hoitakse paroolihalduris.
-- Varu: kase konfiguratsioon on kirjas (või skriptina olemas), et uue hüppemasina saaks tunniga püsti.
+- Varu: jumpserveri konfiguratsioon on kirjas (või skriptina olemas), et uue hüppemasina saaks tunniga püsti.
 
 ### 1.6 Töökorraldus
 
 | Sündmus | Tegevus |
 |---|---|
-| Uus inimene | Tema `.pub` rida lisatakse kase ja serverite `authorized_keys` failidesse |
+| Uus inimene | Tema `.pub` rida lisatakse jumpserveri ja serverite `authorized_keys` failidesse |
 | Inimene lahkub | Tema rida eemaldatakse **kõigist** failidest, `grep "mari.maasikas"` abil |
 | Kord kvartalis | `authorized_keys` failid vaadatakse üle: kas iga rea omanik on veel teada? |
 
 ### Mida mitte teha
 
-- **`ForwardAgent yes`** või `ssh kask`, siis kasel `ssh sammal`. Nii satub agendi sokkel hüppemasinasse ja sealne root saab sinu võtit kasutada. Õige viis on `-J` / `ProxyJump`.
+- **`ForwardAgent yes`** või `ssh jumpserver1`, siis seal `ssh jumpserver2`. Nii satub agendi sokkel hüppemasinasse ja sealne root saab sinu võtit kasutada. Õige viis on `-J` / `ProxyJump`.
 - **Jagatud võtmed.** Logist ei saa aru, kes tegelikult sisse logis, ja inimese lahkumisel tuleb võti kõigil vahetada.
 
 ---
@@ -260,14 +260,14 @@ ssh-keygen -t ed25519 -f user_ca -C "firma user CA"
 
 Faili `user_ca` hoia väga hästi (parooliga, võrguühenduseta masinas või YubiKeyl). Fail `user_ca.pub` läheb kõigisse serveritesse.
 
-**Serveritesse ja kasele** (Ansible'iga):
+**Serveritesse ja jumpserverisse** (Ansible'iga):
 
 ```sshconfig
 TrustedUserCAKeys /etc/ssh/user_ca.pub
 AuthorizedPrincipalsFile /etc/ssh/principals/%u
 ```
 
-- kasel on failis `/etc/ssh/principals/jump` rida `tiim`;
+- jumpserveris on failis `/etc/ssh/principals/jump` rida `tiim`;
 - serverites on failis `/etc/ssh/principals/admin` rida `tiim` või täpsem roll, näiteks `db`, `web` või `admin`.
 
 **Kasutajate olemasolevate võtmete allkirjastamine:**
@@ -297,19 +297,19 @@ Nendega kaob esimesel ühendusel tulev „yes/no“ küsimus ja `known_hosts` fa
 
 ```bash
 ssh-keygen -t ed25519 -f host_ca -C "firma host CA"
-ssh-keygen -s host_ca -I kivi -h -n kivi.sise /etc/ssh/ssh_host_ed25519_key.pub
+ssh-keygen -s host_ca -I server1 -h -n server1.sise /etc/ssh/ssh_host_ed25519_key.pub
 ```
 
 Serverisse lisatakse `HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub`. Kliendi `known_hosts` faili tuleb üks rida:
 
 ```
-@cert-authority *.sise,kask.firma.ee ssh-ed25519 AAAA...host_ca
+@cert-authority *.sise,jumpserver.firma.ee ssh-ed25519 AAAA...host_ca
 ```
 
 ### 2.4 Soovi korral hiljem
 
-- **Teine hüppemasin**, mis on kasega identne ja tehakse samast Ansible rollist. Siis ei tähenda kase rike seisakut.
-- **Tsentraalne logimine:** kase ja serverite `sshd` logid saadetakse logiserverisse, kuhu tiimil endal kirjutusõigust pole.
+- **Teine hüppemasin**, mis on jumpserveriga identne ja tehakse samast Ansible rollist. Siis ei tähenda jumpserveri rike seisakut.
+- **Tsentraalne logimine:** jumpserveri ja serverite `sshd` logid saadetakse logiserverisse, kuhu tiimil endal kirjutusõigust pole.
 - **Lühem kehtivus ja automaatne väljastamine** läbi SSO+MFA (Smallstep step-ca, HashiCorp Vault SSH), et CA faili ei peaks käsitsi kasutama.
 - **FIDO2-võtmed** (`ed25519-sk`), et privaatvõtit ei saaks arvutist varastada.
 
@@ -397,6 +397,6 @@ Piirang peab kehtima kolmel tasandil. Siis ei piisa ründajale ühest veast:
 Kontroll:
 
 ```bash
-ssh -v kivi exit 2>&1 | grep -i "kex: algorithm"
-ssh -G kivi | grep -i warnweak
+ssh -v server1 exit 2>&1 | grep -i "kex: algorithm"
+ssh -G server1 | grep -i warnweak
 ```
