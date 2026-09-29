@@ -23,6 +23,7 @@ Allpool on kirjas praegune olukord, selle probleemid, mida soovime ning nõuded 
 ### Tavapärane töövoog
 
 - Enamik tööd tehakse praegu RDP kaudu Windowsi terminaliserveris, kust edasi PuTTY-ga serveritesse.
+- Serveritele on ligipääs isikul, kelle avalik võti on **Jira pileti kaudu** serverisse tellitud. Iga serveri jaoks tuleb võti eraldi tellida ja see lisatakse serveri `authorized_keys` faili.
 
 ```
    tiimiliikme tööjaam
@@ -352,8 +353,8 @@ scp .\fail.txt server1.sise:/tmp/
 
 | Sündmus | Tegevus |
 |---|---|
-| Uus inimene | Tema `.pub` rida lisatakse jumpserveri ja serverite `authorized_keys` failidesse |
-| Inimene lahkub | Tema rida eemaldatakse **kõigist** failidest, `grep "mari.maasikas"` abil |
+| Uus inimene | Jira pilet: tema `.pub` rida lisatakse jumpserveri ja serverite `authorized_keys` failidesse |
+| Inimene lahkub | Jira pilet: tema rida eemaldatakse **kõigist** failidest, `grep "mari.maasikas"` abil |
 | Kord kvartalis | `authorized_keys` failid vaadatakse üle: kas iga rea omanik on veel teada? |
 
 ### Mida mitte teha
@@ -393,7 +394,7 @@ AuthorizedPrincipalsFile /etc/ssh/principals/%u
 - jumpserveris on failis `/etc/ssh/principals/jump` rida `tiim`;
 - serverites on failis `/etc/ssh/principals/admin` rida `tiim` või täpsem roll, näiteks `db`, `web` või `admin`.
 
-**Kasutajate olemasolevate võtmete allkirjastamine:**
+**Kasutajate olemasolevate võtmete allkirjastamine.** Jira protsess jääb alles, aga pileti peale ei lisata enam võtit igasse serverisse eraldi. Selle asemel allkirjastatakse üks sertifikaat, milles on kirjas, millistele serveritele (rollidele) inimene ligi pääseb:
 
 ```bash
 ssh-keygen -s user_ca -I mari.maasikas -n tiim,web -V +30d mari.pub
@@ -409,7 +410,7 @@ Mari paneb saadud faili nimega `~/.ssh/voti-cert.pub`. Tema configis ei muutu mi
 
 | Sündmus | 1. etapp | 2. etapp |
 |---|---|---|
-| Uus inimene | Muuta tuleb N faili | Allkirjasta üks sertifikaat |
+| Uus inimene | Jira pilet, muuta tuleb N faili | Jira pilet, allkirjasta üks sertifikaat |
 | Inimene lahkub | Eemalda N failist | Sertifikaat aegub ise, vajadusel `RevokedKeys` |
 | Ligipääs osadele serveritele | Ei ole võimalik | Principal'id (`web`, `db`) |
 | Logis on näha | Võtme sõrmejälg | Inimese nimi |
